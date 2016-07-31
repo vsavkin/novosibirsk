@@ -1,0 +1,28 @@
+{
+  "name": "treeshaker",
+  "version": "0.0.1",
+  "description": "Treeshaker",
+  "main": "dist/lib/main.js",
+  "typings": "dist/definitions/main.d.ts",
+  "directories": {
+    "test": "test"
+  },
+  "dependencies": {
+    "typescript": "^2.0.0"
+  },
+  "devDependencies": {
+    "jasmine": "^2.2.22-alpha",
+    "@types/jasmine": "^2.2.22-alpha"
+  },
+  "scripts": {
+    "test": "gulp test"
+  },
+  "repository": {},
+  "keywords": [
+    "typescript"
+  ],
+  "contributors": [
+    "Victor Savkin<vsavkin@google.com> (https://vsavkin.com)"
+  ],
+  "license": "MIT"
+}

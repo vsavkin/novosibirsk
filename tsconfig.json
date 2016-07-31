@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "noEmitOnError": true,
+    "outDir": "dist"
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test/e2e"
+  ],
+  "files": [
+    "src/treeshaker.ts",
+    "spec/integration.spec.ts",
+    "node_modules/@types/jasmine/index.d.ts"
+  ]
+}
