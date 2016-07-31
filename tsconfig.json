@@ -3,7 +3,10 @@
     "module": "commonjs",
     "moduleResolution": "node",
     "noEmitOnError": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "strictNullChecks": true,
+    "target": "es5",
+    "lib": ["es5", "es6"]
   },
   "exclude": [
     "node_modules",
@@ -13,6 +16,7 @@
   "files": [
     "src/treeshaker.ts",
     "spec/integration.spec.ts",
-    "node_modules/@types/jasmine/index.d.ts"
+    "node_modules/@types/jasmine/index.d.ts",
+    "node_modules/@types/node/index.d.ts"
   ]
 }
