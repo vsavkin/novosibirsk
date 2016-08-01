@@ -12,7 +12,7 @@ describe("integration specs", () => {
   });
 
   // should do renaming (functions name the same way)
-  // should handle top-level statements
+  // should handle top-level statements (purity etc)
 });
 
 function check(entrypoint: string, expected: string) {

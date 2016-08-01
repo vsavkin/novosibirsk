@@ -12,7 +12,7 @@ export function run(entrypoint: string): string {
 class Bundler {
   program: ts.Program;
   typeChecker: ts.TypeChecker;
-  sourceFile: ts.SourceFile;
+  entrypoint: string;
 
   constructor(filename: string) {
     if (!filename.match(/\.ts$/)) {
@@ -20,39 +20,75 @@ class Bundler {
     }
 
     const host = ts.createCompilerHost(baseTsOptions);
-    const entrypoint = path.normalize(filename);
+    this.entrypoint = path.normalize(filename);
 
-    this.program = ts.createProgram([entrypoint], baseTsOptions, host);
+    this.program = ts.createProgram([this.entrypoint], baseTsOptions, host);
     this.typeChecker = this.program.getTypeChecker();
-
-    this.sourceFile = this.program.getSourceFile(entrypoint);
-    if (!this.sourceFile) {
-      throw new Error(`Source file "${entrypoint}" not found`);
-    }
   }
 
   bundle(): string {
-    const decls = this.sourceFile.statements.map(s => this.parseDeclaration(<ts.FunctionDeclaration>s));
-    const mapOfDecls = decls.reduce((m, c) => (m[c.name] = c, m), {});
-    const module = new Module(this.sourceFile, this.sourceFile.fileName, mapOfDecls);
-    const linkedModule = this.link(module);
-    const roots = Object.keys(linkedModule.declarations).
-      map(n => linkedModule.declarations[n]).
-      filter(n => n.exported);
+    const onlyTsFiles = this.program.getSourceFiles().filter(sf => !sf.fileName.endsWith("d.ts"));
+    const modules = onlyTsFiles.reduce((m, c) => (m[c.fileName] = this.compileFile(c), m), {});
+    const linkedModules = this.link(modules);
 
+    const entryModule = linkedModules[this.entrypoint];
+    const roots = Object.keys(entryModule.declarations).
+      map(n => entryModule.declarations[n]).
+      filter(n => n.exported);
     const emitter = new Emitter();
     const res = emitter.emit(roots);
-
     return res;
   }
 
-  private link(module: Module):Module {
-    Object.keys(module.declarations).forEach(k => {
-      module.declarations[k].deps.forEach(dep => {
-        dep.node = module.declarations[dep.target];
+  private compileFile(sourceFile: ts.SourceFile): Module {
+    const decls:Declaration[] = [];
+    const imports:Import[] = [];
+
+    sourceFile.statements.forEach(s => {
+      if (s.kind === ts.SyntaxKind.ImportDeclaration) {
+        imports.push(this.parseImport(sourceFile, <ts.ImportDeclaration>s));
+      } else {
+        decls.push(this.parseDeclaration(<ts.FunctionDeclaration>s));
+      }
+    });
+
+    const mapsOfImports = imports.reduce((m, c) => {
+      c.identifiers.forEach(id => {
+        m[id] = c.filename;
+      });
+      return m;
+    }, {});
+
+    const mapOfDecls = decls.reduce((m, c) => (m[c.name] = c, m), {});
+
+    return new Module(sourceFile, sourceFile.fileName, mapOfDecls, mapsOfImports);
+  }
+
+  private link(modules: {[filename:string]:Module}):{[filename:string]:Module} {
+    Object.keys(modules).forEach(filename => {
+      const m = modules[filename];
+      Object.keys(m.declarations).forEach(k => {
+        m.declarations[k].deps.forEach(dep => {
+          if (m.declarations[dep.target]) {
+            dep.node = m.declarations[dep.target];
+          } else if (m.imports[dep.target]) {
+            const importFilename = m.imports[dep.target];
+            dep.node = modules[importFilename].declarations[dep.target];
+          } else {
+            throw "Unknow symbol!";
+          }
+        });
       });
     });
-    return module;
+
+    return modules;
+  }
+
+  private parseImport(sourceFile: ts.SourceFile, n: ts.ImportDeclaration): Import {
+    const t = n.moduleSpecifier.getText();
+    const filename = path.join(path.dirname(sourceFile.fileName), `${t.substring(2, t.length - 1)}.ts`);
+    const ids = (<any>n.importClause!.namedBindings).elements.map(e => e.getText())
+    return new Import(n, filename, ids);
   }
 
   private parseDeclaration(n: ts.FunctionDeclaration): Declaration {
@@ -183,7 +219,11 @@ class Emitter {
 
 
 export class Module {
-  constructor(public ast: ts.Node, public name: string, public declarations: {[name:string]: Declaration}){}
+  constructor(public ast: ts.Node, public name: string, public declarations: {[name:string]: Declaration}, public imports: {[id:string]: string}){}
+}
+
+export class Import {
+  constructor(public ast: ts.Node, public filename: string, public identifiers: string[]){}
 }
 
 export class Reference {
