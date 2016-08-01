@@ -1,0 +1,18 @@
+Entry points: everything that is exported + imperative code
+
+
+It should be two phases.
+
+- The first one process every file separately and all references are weak references
+- Second phase links them
+
+What about circular references?
+
+
+
+
+Next:
+- we need to figure out a way to ignore locals and params
+
+
+We need to implement the process of renaming, when we give identiefiers new names

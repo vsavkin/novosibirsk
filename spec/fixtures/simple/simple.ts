@@ -5,3 +5,7 @@ export function a(): string {
 function b(p: string): string {
   return p;
 }
+
+function c() {
+  return "100";
+}
