@@ -24,6 +24,7 @@ class Bundler {
 
     this.program = ts.createProgram([this.entrypoint], baseTsOptions, host);
     this.typeChecker = this.program.getTypeChecker();
+
   }
 
   bundle(): string {
@@ -43,14 +44,21 @@ class Bundler {
   private compileFile(sourceFile: ts.SourceFile): Module {
     const decls:Declaration[] = [];
     const imports:Import[] = [];
+    const statements:Statement[] = [];
 
     sourceFile.statements.forEach(s => {
       if (s.kind === ts.SyntaxKind.ImportDeclaration) {
         imports.push(this.parseImport(sourceFile, <ts.ImportDeclaration>s));
+      } else if (s.kind === ts.SyntaxKind.ExpressionStatement) {
+        statements.push(this.parseStatement(<ts.ExpressionStatement>s));
       } else {
         decls.push(this.parseDeclaration(<ts.FunctionDeclaration>s));
       }
     });
+
+    if (sourceFile.fileName !== this.entrypoint) {
+      decls.forEach(d => this.removeExport(d));
+    }
 
     const mapsOfImports = imports.reduce((m, c) => {
       c.identifiers.forEach(id => {
@@ -61,8 +69,10 @@ class Bundler {
 
     const mapOfDecls = decls.reduce((m, c) => (m[c.name] = c, m), {});
 
-    return new Module(sourceFile, sourceFile.fileName, mapOfDecls, mapsOfImports);
+    return new Module(sourceFile, sourceFile.fileName, mapOfDecls, mapsOfImports, statements);
   }
+
+  private removeExport(d: Declaration): void {}
 
   private link(modules: {[filename:string]:Module}):{[filename:string]:Module} {
     Object.keys(modules).forEach(filename => {
@@ -84,6 +94,11 @@ class Bundler {
     return modules;
   }
 
+  private parseStatement(n: ts.ExpressionStatement): Statement {
+    const deps = new ReferenceCollector().collectFromExpression(n);
+    return new Statement(n, "", deps);
+  }
+
   private parseImport(sourceFile: ts.SourceFile, n: ts.ImportDeclaration): Import {
     const t = n.moduleSpecifier.getText();
     const filename = path.join(path.dirname(sourceFile.fileName), `${t.substring(2, t.length - 1)}.ts`);
@@ -93,38 +108,9 @@ class Bundler {
 
   private parseDeclaration(n: ts.FunctionDeclaration): Declaration {
     const name = n.name!.getText();
-    const deps = n.body ? this.collectDeps(n) : [];
+    const deps = n.body ? new ReferenceCollector().collectFromFunctionDeclaration(n) : [];
     const exported = !!n.modifiers && !!(n.modifiers.flags & ts.NodeFlags.Export);
     return new Declaration(n, "", deps, name, exported);
-  }
-
-  private collectDeps(n: ts.FunctionDeclaration): Reference[] {
-    const c = new ReferenceCollector(n);
-    return c.collect();
-  }
-
-  private getResolvedSymbols(sourceFile: ts.SourceFile): ts.Symbol[] {
-    const ms = (<any>sourceFile).symbol;
-    const rawSymbols = ms ? (this.typeChecker.getExportsOfModule(ms) || []) : [];
-    return rawSymbols.map(s => {
-      if (s.flags & ts.SymbolFlags.Alias) {
-        const resolvedSymbol = this.typeChecker.getAliasedSymbol(s);
-
-        // This will happen, e.g. for symbols re-exported from external modules.
-        if (!resolvedSymbol.valueDeclaration && !resolvedSymbol.declarations) {
-          return s;
-        }
-        if (resolvedSymbol.name !== s.name) {
-          throw new Error(
-              `Symbol "${resolvedSymbol.name}" was aliased as "${s.name}". ` +
-              `Aliases are not supported."`);
-        }
-
-        return resolvedSymbol;
-      } else {
-        return s;
-      }
-    });
   }
 }
 
@@ -171,12 +157,13 @@ abstract class AstVisitor {
 class ReferenceCollector extends AstVisitor {
   refs: Reference[] = [];
 
-  constructor(public fn: ts.FunctionDeclaration) {
-    super();
+  collectFromFunctionDeclaration(fn: ts.FunctionDeclaration):Reference[] {
+   	this.visit(<any>fn.body);
+    return this.refs;
   }
 
-  collect():Reference[] {
-   	this.visit(<any>this.fn.body);
+  collectFromExpression(fn: ts.ExpressionStatement):Reference[] {
+   	this.visit(<any>fn.expression);
     return this.refs;
   }
 
@@ -210,6 +197,7 @@ class Emitter {
     if (this.visited.has(root)) {
       return "";
     }
+    // should probably switch the order of emits to emits deps first
     const res = [root.ast.getText()];
     this.visited.add(root);
     res.push(...root.deps.map(d => this.emitNode(d.node)));
@@ -219,7 +207,7 @@ class Emitter {
 
 
 export class Module {
-  constructor(public ast: ts.Node, public name: string, public declarations: {[name:string]: Declaration}, public imports: {[id:string]: string}){}
+  constructor(public ast: ts.Node, public name: string, public declarations: {[name:string]: Declaration}, public imports: {[id:string]: string}, public statements: Statement[]){}
 }
 
 export class Import {
@@ -237,6 +225,13 @@ export abstract class Node {
 
 export class Declaration extends Node {
   constructor(ast: ts.Node, module: string, deps: Reference[], public name: string, public exported: boolean) {
+    super(ast, module, deps);
+  }
+}
+
+export class Statement extends Node {
+  public pure: boolean = false;
+  constructor(ast: ts.Node, module: string, deps: Reference[]) {
     super(ast, module, deps);
   }
 }

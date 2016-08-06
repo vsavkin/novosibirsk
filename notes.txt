@@ -16,3 +16,19 @@ Next:
 
 
 We need to implement the process of renaming, when we give identiefiers new names
+
+
+Check what rollups does (scopes or renames)
+
+- Is therea a built-in emitter I can use?
+
+
+module graph
+
+
+- graph of modules
+
+
+Module (set of declarations)
+
+
